@@ -54,18 +54,17 @@ BanCheck.initWebAPIKey = function(callback)
 end
 
 BanCheck.initUI = function()
-	local CurrentCheck
-
 	BanCheck.ui.enable = ui.new_checkbox('Lua', 'B', 'Delete Banned Friends')
+	BanCheck.ui.maximumDays = ui.new_slider('Lua', 'B', 'Maximum Days Since Ban', 0, 1000, 0, true, '', 1, {[0]='Infinite'})
 	BanCheck.ui.status = ui.new_label('Lua', 'B', 'Status: Idle')
 	
 	BanCheck.ui.start = ui.new_button('Lua', 'B', 'Check', function()
-		CurrentCheck = BanCheck.new()
+		local CurrentCheck = BanCheck.new()
 		CurrentCheck.onUpdate = function()
 			ui.set(BanCheck.ui.status, 'Status: Checking ' .. CurrentCheck.currentposition .. '/' .. CurrentCheck.totalcount .. '!')
 		end
 		CurrentCheck.onFinished = function()
-			ui.set(BanCheck.ui.status, 'Status: Finished, unfriended ' .. CurrentCheck.bannedcount .. '/' .. CurrentCheck.totalcount .. ' accounts!')
+			ui.set(BanCheck.ui.status, 'Status: Finished, unfriended ' .. CurrentCheck.bannedcount .. ' accounts!')
 		end
 		CurrentCheck:start()
 	end)
@@ -74,6 +73,7 @@ BanCheck.initUI = function()
 		local State = type(state) == 'number' and ui.get(state) or type(state) == 'boolean' and State
 
 		ui.set_visible(BanCheck.ui.status, State)
+		ui.set_visible(BanCheck.ui.maximumDays, State)
 		ui.set_visible(BanCheck.ui.start, State)
 	end
 	ShowUI(false)
@@ -113,6 +113,7 @@ end
 
 BanCheck.CheckAccounts = function(data)
 	local Steamids = {}
+
 	for i=0, ISteamFriends.GetFriendCount(0x04)-1 do
 		local Group = math.floor(i / 100)+1
 		Steamids[Group] = Steamids[Group] or {}
@@ -127,19 +128,23 @@ BanCheck.CheckAccounts = function(data)
 		http.get('https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key=' .. BanCheck.APIKey .. '&steamids=' .. steamidStr, function(success, response)
 			if not success or response.status ~= 200 then return end
 			local jsonData = json.parse(response.body)
+			local MaximumDays = ui.get(BanCheck.ui.maximumDays)
+			local InfiniteMaxDays = MaximumDays == 0
 			if ( jsonData and jsonData.players ) then
 				for index, Player in ipairs(jsonData.players) do
 					data.currentposition = data.currentposition + 1
-					if ( Player.NumberOfVACBans > 0 or Player.NumberOfGameBans > 0 ) then
+					if ( InfiniteMaxDays and (Player.NumberOfVACBans > 0 or Player.NumberOfGameBans > 0) ) then
+						ISteamFriends.RemoveFriend(Player.SteamId)
+						data.bannedcount = data.bannedcount + 1
+					elseif ( ( Player.NumberOfGameBans > 0 and Player.NumberOfGameBans < MaximumDays ) or ( Player.NumberOfVACBans > 0 and Player.NumberOfVACBans < MaximumDays ) ) then
 						ISteamFriends.RemoveFriend(Player.SteamId)
 						data.bannedcount = data.bannedcount + 1
 					end
 					data.onUpdate()
+					if ( data.currentposition == data.totalcount ) then
+						data.onFinished()
+					end
 				end
-			end
-
-			if ( GroupIndex == #Steamids ) then
-				data.onFinished()
 			end
 		end)
 		
