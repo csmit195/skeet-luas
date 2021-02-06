@@ -31,7 +31,7 @@ BanCheck.init = function()
 				ui.set(BanCheck.ui.status, 'Status: Checking ' .. CurrentCheck.currentposition .. '/' .. CurrentCheck.totalcount .. '!')
 			end
 			CurrentCheck.onFinished = function()
-				ui.set(BanCheck.ui.status, 'Status: Finished ' .. CurrentCheck.currentposition .. '/' .. CurrentCheck.totalcount .. '!')
+				ui.set(BanCheck.ui.status, 'Status: Finished, unfriended ' .. CurrentCheck.bannedcount .. '/' .. CurrentCheck.totalcount .. ' accounts!')
 				StartStopToggle(true)
 			end
 			CurrentCheck:start()
