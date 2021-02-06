@@ -6,50 +6,75 @@ local ISteamFriends = steamworks.ISteamFriends
 
 local BanCheck = { ui = {} }
 
-BanCheck.init = function()
-	local CurrentCheck, Started
+BanCheck.initWebAPIKey = function(callback)
+	local Browser = panorama.loadstring([[
+		let APIKey = '';
 
-	BanCheck.ui.enable = ui.new_checkbox('Lua', 'B', 'Delete Banned Friends')
-	BanCheck.ui.delay = ui.new_slider('Lua', 'B', 'Delay', 100, 1000, 500, true, 'ms')
-	BanCheck.ui.status = ui.new_label('Lua', 'B', 'Status: Idle')
-	
-	local StartStopToggle = function(status)
-		ui.set_visible(BanCheck.ui.stop, not status)
-		ui.set_visible(BanCheck.ui.start, status)
-		Started = not status
-	end
+		const Browser = $.CreatePanel('HTML', $.GetContextPanel(), '', {
+			url: 'https://steamcommunity.com/dev/apikey',
+			acceptsinput: 'false',
+			acceptsfocus: 'false',
+			mousetracking: 'false',
+			focusonhover: 'false',
+			width: '100px',
+			height: '100px',
+		})
+		Browser.visible = false
 
-	local StartStop = function()
-		if ( CurrentCheck and CurrentCheck.active and not CurrentCheck.finished and not CurrentCheck.stopped ) then
-			ui.set(BanCheck.ui.status, 'Status: Stopped ' .. CurrentCheck.currentposition .. '/' .. CurrentCheck.totalcount .. '!')
-			CurrentCheck:stop()
-			StartStopToggle(true)
-		elseif ( not CurrentCheck or ( CurrentCheck.active and CurrentCheck.finished ) or CurrentCheck.stopped ) then
-			-- Finished / Not Started
-			CurrentCheck = BanCheck.new()
-			CurrentCheck.onUpdate = function()
-				ui.set(BanCheck.ui.status, 'Status: Checking ' .. CurrentCheck.currentposition .. '/' .. CurrentCheck.totalcount .. '!')
-			end
-			CurrentCheck.onFinished = function()
-				ui.set(BanCheck.ui.status, 'Status: Finished, unfriended ' .. CurrentCheck.bannedcount .. '/' .. CurrentCheck.totalcount .. ' accounts!')
-				StartStopToggle(true)
-			end
-			CurrentCheck:start()
+		let finish_handler = $.RegisterEventHandler('HTMLFinishRequest', Browser, function(a, url, title){
+			if(url == 'https://steamcommunity.com/dev/apikey'){
+				Browser.RunJavascript(`alert(jQuery('#bodyContents_ex > p:nth-child(2)').text().substr(5))`);
+			}
+		});
 
-			StartStopToggle(false)
+		let alert_handler = $.RegisterEventHandler('HTMLJSAlert', Browser, function(id, WebAPIKey){
+			APIKey = WebAPIKey;
+
+			$.UnregisterEventHandler('HTMLFinishRequest', Browser, finish_handler);
+			Browser.DeleteAsync(0.0);
+		});
+
+
+		return {
+			get_key: () => {
+				return APIKey
+			}
+		}
+	]], 'CSGOMainMenu')()
+
+	function loopCheck()
+		local Key = Browser.get_key()
+		if ( Key:len() == 32 ) then
+			callback(Key)
+		else
+			client.delay_call(0.1, loopCheck)
 		end
 	end
+	loopCheck()
+end
 
-	BanCheck.ui.start = ui.new_button('Lua', 'B', 'Start', StartStop)
-	BanCheck.ui.stop = ui.new_button('Lua', 'B', 'Stop', StartStop)
+BanCheck.initUI = function()
+	local CurrentCheck
+
+	BanCheck.ui.enable = ui.new_checkbox('Lua', 'B', 'Delete Banned Friends')
+	BanCheck.ui.status = ui.new_label('Lua', 'B', 'Status: Idle')
+	
+	BanCheck.ui.start = ui.new_button('Lua', 'B', 'Check', function()
+		CurrentCheck = BanCheck.new()
+		CurrentCheck.onUpdate = function()
+			ui.set(BanCheck.ui.status, 'Status: Checking ' .. CurrentCheck.currentposition .. '/' .. CurrentCheck.totalcount .. '!')
+		end
+		CurrentCheck.onFinished = function()
+			ui.set(BanCheck.ui.status, 'Status: Finished, unfriended ' .. CurrentCheck.bannedcount .. '/' .. CurrentCheck.totalcount .. ' accounts!')
+		end
+		CurrentCheck:start()
+	end)
 
 	local ShowUI = function(state)
-		local State = type(state) == 'number' and ui.get(state) or type(state) == 'boolean' and state
-		print(type(state), State)
-		ui.set_visible(BanCheck.ui.delay, State)
+		local State = type(state) == 'number' and ui.get(state) or type(state) == 'boolean' and State
+
 		ui.set_visible(BanCheck.ui.status, State)
-		ui.set_visible(BanCheck.ui.start, not ( CurrentCheck and Started ) and State)
-		ui.set_visible(BanCheck.ui.stop, ( CurrentCheck and Started ) and State)
+		ui.set_visible(BanCheck.ui.start, State)
 	end
 	ShowUI(false)
 
@@ -87,32 +112,43 @@ BanCheck.new = function()
 end
 
 BanCheck.CheckAccounts = function(data)
-	local FriendCount = ISteamFriends.GetFriendCount(0x04)-1
-	for i=0, FriendCount do
-		local steamid = ISteamFriends.GetFriendByIndex(i, 0x04)
-		data.totalcount = data.totalcount + 1
-		client.delay_call(i * (BanCheck.ui.delay / 1000), function()
-			if ( data.stopped ) then return end
-			http.get('https://steamcommunity.com/profiles/' .. steamid:render_steam64(), function(success, response)
-				if not success or response.status ~= 200 or data.stopped then return end
-				data.currentposition = data.currentposition + 1
+	local Steamids = {}
+	for i=0, ISteamFriends.GetFriendCount(0x04)-1 do
+		local Group = math.floor(i / 100)+1
+		Steamids[Group] = Steamids[Group] or {}
+		Steamids[Group][#Steamids[Group] + 1] = ISteamFriends.GetFriendByIndex(i, 0x04):render_steam64()
 
-				if ( string.find(response.body, '<div class="profile_ban">') ) then
-					ISteamFriends.RemoveFriend(steamid.steamid64)
-					data.bannedcount = data.bannedcount + 1
+		data.totalcount = data.totalcount + 1
+		data.onUpdate()
+	end
+
+	for GroupIndex, Group in ipairs(Steamids) do
+		local steamidStr = table.concat(Group, ',')
+		http.get('https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key=' .. BanCheck.APIKey .. '&steamids=' .. steamidStr, function(success, response)
+			if not success or response.status ~= 200 then return end
+			local jsonData = json.parse(response.body)
+			if ( jsonData and jsonData.players ) then
+				for index, Player in ipairs(jsonData.players) do
+					data.currentposition = data.currentposition + 1
+					if ( Player.NumberOfVACBans > 0 or Player.NumberOfGameBans > 0 ) then
+						ISteamFriends.RemoveFriend(Player.SteamId)
+						data.bannedcount = data.bannedcount + 1
+					end
+					data.onUpdate()
 				end
-				
-				data.onUpdate()
-				
-				if ( i == FriendCount ) then
-					data.finished = true
-					data.onFinished()
-				end
-			end)
+			end
+
+			if ( GroupIndex == #Steamids ) then
+				data.onFinished()
+			end
 		end)
+		
 	end
 
 	data.onUpdate()
 end
 
-BanCheck.init()
+BanCheck.initWebAPIKey(function(APIKey)
+	BanCheck.APIKey = APIKey
+	BanCheck.initUI()
+end)
