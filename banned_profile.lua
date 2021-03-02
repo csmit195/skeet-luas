@@ -6,53 +6,6 @@ local ISteamFriends = steamworks.ISteamFriends
 
 local BanCheck = { ui = {} }
 
-BanCheck.initWebAPIKey = function(callback)
-	local Browser = panorama.loadstring([[
-		let APIKey = '';
-
-		const Browser = $.CreatePanel('HTML', $.GetContextPanel(), '', {
-			url: 'https://steamcommunity.com/dev/apikey',
-			acceptsinput: 'false',
-			acceptsfocus: 'false',
-			mousetracking: 'false',
-			focusonhover: 'false',
-			width: '100px',
-			height: '100px',
-		})
-		Browser.visible = false
-
-		let finish_handler = $.RegisterEventHandler('HTMLFinishRequest', Browser, function(a, url, title){
-			if(url == 'https://steamcommunity.com/dev/apikey'){
-				Browser.RunJavascript(`alert(jQuery('#bodyContents_ex > p:nth-child(2)').text().substr(5))`);
-			}
-		});
-
-		let alert_handler = $.RegisterEventHandler('HTMLJSAlert', Browser, function(id, WebAPIKey){
-			APIKey = WebAPIKey;
-
-			$.UnregisterEventHandler('HTMLFinishRequest', Browser, finish_handler);
-			Browser.DeleteAsync(0.0);
-		});
-
-
-		return {
-			get_key: () => {
-				return APIKey
-			}
-		}
-	]], 'CSGOMainMenu')()
-
-	function loopCheck()
-		local Key = Browser.get_key()
-		if ( Key:len() == 32 ) then
-			callback(Key)
-		else
-			client.delay_call(0.1, loopCheck)
-		end
-	end
-	loopCheck()
-end
-
 BanCheck.initUI = function()
 	BanCheck.ui.enable = ui.new_checkbox('Lua', 'B', 'Delete Banned Friends')
 	BanCheck.ui.maximumDays = ui.new_slider('Lua', 'B', 'Maximum Days Since Ban', 0, 1000, 0, true, '', 1, {[0]='Infinite'})
@@ -125,7 +78,7 @@ BanCheck.CheckAccounts = function(data)
 
 	for GroupIndex, Group in ipairs(Steamids) do
 		local steamidStr = table.concat(Group, ',')
-		http.get('https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key=' .. BanCheck.APIKey .. '&steamids=' .. steamidStr, function(success, response)
+		http.get('https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key=' .. BanCheck.RandomWebKey() .. '&steamids=' .. steamidStr, function(success, response)
 			if not success or response.status ~= 200 then return end
 			local jsonData = json.parse(response.body)
 			local MaximumDays = ui.get(BanCheck.ui.maximumDays)
@@ -153,7 +106,15 @@ BanCheck.CheckAccounts = function(data)
 	data.onUpdate()
 end
 
-BanCheck.initWebAPIKey(function(APIKey)
-	BanCheck.APIKey = APIKey
-	BanCheck.initUI()
-end)
+local Keys = {
+	'5DA40A4A4699DEE30C1C9A7BCE84C914',
+	'5970533AA2A0651E9105E706D0F8EDDC',
+	'2B3382EBA9E8C1B58054BD5C5EE1C36A'
+}
+local KeyIndex = 0
+function BanCheck.RandomWebKey()
+	KeyIndex = KeyIndex < #Keys and KeyIndex + 1 or 1
+	return Keys[KeyIndex]
+end
+
+BanCheck.initUI()
