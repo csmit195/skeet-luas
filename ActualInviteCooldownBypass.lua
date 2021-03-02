@@ -32,10 +32,16 @@ local P = panorama.loadstring([[
     }
 ]])()
 
+--#region UI Code
+local SilentInvites = ui.new_checkbox('Misc', 'Miscellaneous', 'Silent Invites')
+--#endregion
+
 local function InvitePlayer(xuid)
     local lobby = ISteamMatchmaking.GetLobbyID()
     if lobby ~= nil then
-        PartyListAPI.SessionCommand('Game::ChatInviteMessage', string.format('run all xuid %s %s %s', MyPersonaAPI.GetXuid(), 'friend', xuid))
+        if ( not ui.get(SilentInvites) ) then
+            PartyListAPI.SessionCommand('Game::ChatInviteMessage', string.format('run all xuid %s %s %s', MyPersonaAPI.GetXuid(), 'friend', xuid))
+        end
         ISteamMatchmaking.InviteUserToLobby(lobby, xuid)
     else
         client.delay_call(0.1, InvitePlayer, xuid)
