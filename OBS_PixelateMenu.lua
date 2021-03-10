@@ -1,4 +1,4 @@
-local obs_websockets = require 'obs_websockets'
+local obs_websockets = require 'gamesense/obs_websockets'
 local OBSFilters
 
 -- START User Settings
