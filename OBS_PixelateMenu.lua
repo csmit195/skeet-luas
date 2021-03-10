@@ -1,11 +1,12 @@
 local obs_websockets = require 'obs_websockets'
 local OBSFilters
 
--- User Set Settings
+-- START User Settings
 local wsURL = 'ws://localhost:4444'
 local wsPassword = 'GayForOxis31' -- Not relevant if authentication is disabled
 local GameSourceName = 'Game'
 local RenderDelay = 0 -- Most people will use 0, ill leave it at zero. I'm working on another lua that requires a render-delay, ill post more about that soon.
+-- END User Settings
 
 Connection = obs_websockets.connect(wsURL, wsPassword, function(success, err)
     if not success then return error(err) end
